@@ -1,0 +1,5 @@
+{
+  "name": "A-Share Pro Trader Simulator",
+  "description": "A professional stock trading simulation platform for A-shares, featuring real historical K-line training, intraday simulation, and detailed performance analytics.",
+  "requestFramePermissions": []
+}
