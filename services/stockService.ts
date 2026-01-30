@@ -9,28 +9,26 @@ export const fetchRandomStock = (): StockInfo => {
 };
 
 /**
- * 获取完整历史数据
+ * 获取完整历史数据，带有鲁棒的错误处理和缓存穿透
  */
 export const fetchHistoricalDataFromAPI = async (code: string): Promise<{ data: KLine[], startIndex: number }> => {
   try {
     const symbol = code.toLowerCase();
-    const count = 1200; // 获取上限数据量
-    // 增加 timestamp 防止缓存
-    const apiUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,${count},qfq&_=${Date.now()}`;
+    // 增加随机数后缀 _ 防止 API 缓存
+    const apiUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,1200,qfq&_=${Date.now()}`;
     
     const response = await fetch(`${PROXY_URL}${encodeURIComponent(apiUrl)}`);
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
     const rawText = await response.text();
-    // 检查是否返回了 HTML (代理错误)
     if (rawText.trim().startsWith('<')) throw new Error('Proxy returned HTML');
 
     const parsedData = JSON.parse(rawText);
     const stockData = parsedData.data?.[symbol];
-    if (!stockData) throw new Error('API Data Node Missing');
+    if (!stockData) throw new Error('Invalid Data Structure');
     
     const rawKData = stockData.qfqday || stockData.day;
-    if (!Array.isArray(rawKData) || rawKData.length < 50) throw new Error('Data too short');
+    if (!Array.isArray(rawKData) || rawKData.length < 50) throw new Error('Insufficient Data');
 
     const allData: KLine[] = rawKData.map((item: any, i: number, arr: any[]) => {
       const close = parseFloat(item[2]);
@@ -54,14 +52,16 @@ export const fetchHistoricalDataFromAPI = async (code: string): Promise<{ data: 
       };
     });
 
-    // 随机选择起点，预留至少 100 天的训练空间
-    const maxStart = Math.max(0, allData.length - 120);
+    // 随机选择起点，留出足够长的交易序列（至少150天）
+    const maxStart = Math.max(0, allData.length - 150);
     const startIndex = Math.floor(Math.random() * Math.min(maxStart, 800));
 
     return { data: allData, startIndex };
   } catch (error) {
-    console.warn('API Fetch failed, using simulation engine instead.', error);
-    const fallback = generateFallbackData(800);
+    console.warn('Stock API Fetch Error, Switching to Fallback Engine:', error);
+    // 生成一个带有随机波动的回退数据集
+    const fallbackCount = 800;
+    const fallback = generateFallbackData(fallbackCount);
     return { data: fallback, startIndex: 150 };
   }
 };
@@ -116,23 +116,23 @@ export const generateMinuteData = (kline: KLine): MinuteData[] => {
 
 const generateFallbackData = (count: number): KLine[] => {
   const data: KLine[] = [];
-  let currentPrice = 30 + Math.random() * 50;
+  let currentPrice = 50 + Math.random() * 50;
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - count * 1.5);
 
   for (let i = 0; i < count; i++) {
-    const change = currentPrice * (Math.random() - 0.485) * 0.04;
+    const dailyReturn = (Math.random() - 0.49) * 0.05; // 模拟略微向上的波动
     const open = currentPrice;
-    const close = open + change;
-    const date = new Date(startDate.getTime() + i * 24 * 3600 * 1000);
+    const close = open * (1 + dailyReturn);
+    const high = Math.max(open, close) * (1 + Math.random() * 0.02);
+    const low = Math.min(open, close) * (1 - Math.random() * 0.02);
+    const volume = 5000000 + Math.random() * 20000000;
     
+    const date = new Date(startDate.getTime() + i * 24 * 3600 * 1000);
     if (date.getDay() !== 0 && date.getDay() !== 6) {
       data.push({
         date: date.toISOString().split('T')[0],
-        open, close,
-        high: Math.max(open, close) * (1 + Math.random() * 0.015),
-        low: Math.min(open, close) * (1 - Math.random() * 0.015),
-        volume: 2000000 + Math.random() * 8000000
+        open, close, high, low, volume
       });
       currentPrice = close;
     }

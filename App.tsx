@@ -7,7 +7,7 @@ import {
   fetchRandomStock, fetchHistoricalDataFromAPI, generateMinuteData 
 } from './services/stockService';
 import { 
-  INITIAL_CASH, COMMISSION_RATE, STAMP_DUTY_RATE, MIN_COMMISSION, SEED_STOCKS 
+  INITIAL_CASH, COMMISSION_RATE, STAMP_DUTY_RATE, MIN_COMMISSION 
 } from './constants';
 import KLineChart from './components/KLineChart';
 import MinuteChart from './components/MinuteChart';
@@ -24,7 +24,7 @@ const App: React.FC = () => {
 
   const [account, setAccount] = useState<UserAccount>(() => {
     try {
-      const saved = localStorage.getItem('trader_sim_account_v5');
+      const saved = localStorage.getItem('trader_sim_account_v6');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
@@ -50,23 +50,25 @@ const App: React.FC = () => {
   const visibleIntradayData = useMemo(() => fullIntradayData.slice(0, intradayStep + 1), [fullIntradayData, intradayStep]);
   const currentMinutePrice = useMemo(() => visibleIntradayData.length > 0 ? visibleIntradayData[visibleIntradayData.length - 1].price : (currentKLine?.open || 0), [visibleIntradayData, currentKLine]);
 
-  // 核心成交逻辑
+  // 统一卖出逻辑
   const handleSell = useCallback((amount: number, forcePrice?: number) => {
     if (!stock || !currentKLine) return;
-    const pos = accountRef.current.positions.find(p => p.stockCode === stock.code);
+    const currentAcc = accountRef.current;
+    const pos = currentAcc.positions.find(p => p.stockCode === stock.code);
     if (!pos || pos.amount < amount) return;
 
     const price = forcePrice || currentMinutePrice;
     const proceeds = amount * price;
     const fee = Math.max(proceeds * COMMISSION_RATE, MIN_COMMISSION) + proceeds * STAMP_DUTY_RATE;
     const profit = (price - pos.costPrice) * amount - fee;
+    const profitRate = (profit / (pos.costPrice * amount)) * 100;
 
     const newRecord: TradeRecord = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5), 
+      id: `sell-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       type: 'SELL', stockCode: stock.code, stockName: stock.name,
       price, amount, fee, 
       time: `${currentKLine.date} ${visibleIntradayData[visibleIntradayData.length-1]?.time || '15:00'}`,
-      totalAmount: proceeds - fee, profit, profitRate: (profit / (pos.costPrice * amount)) * 100
+      totalAmount: proceeds - fee, profit, profitRate
     };
 
     setAccount(prev => ({
@@ -77,17 +79,18 @@ const App: React.FC = () => {
     }));
   }, [stock, currentKLine, currentMinutePrice, visibleIntradayData]);
 
-  // 强制清仓当前品种
+  // 强制结算当前持仓
   const liquidateCurrentStock = useCallback(() => {
+    const currentAcc = accountRef.current;
     if (!stock) return;
-    const pos = accountRef.current.positions.find(p => p.stockCode === stock.code);
+    const pos = currentAcc.positions.find(p => p.stockCode === stock.code);
     if (pos && pos.amount > 0) {
       handleSell(pos.amount);
     }
   }, [stock, handleSell]);
 
   const loadNewStock = useCallback(async (isSkip = false) => {
-    if (isSkip) liquidateCurrentStock(); // 手动跳过时强制结算
+    if (isSkip) liquidateCurrentStock(); 
     
     setIsLoading(true);
     try {
@@ -101,7 +104,7 @@ const App: React.FC = () => {
       setIsSimulating(true);
       setIsLoading(false);
     } catch (err) {
-      console.error('Loader failed:', err);
+      console.error('Loader Error:', err);
       setIsLoading(false);
     }
   }, [liquidateCurrentStock]);
@@ -111,37 +114,35 @@ const App: React.FC = () => {
       setVisibleCount(prev => prev + 1);
       setIntradayStep(0);
       setIsSimulating(true);
-      // 解锁当日卖出限制
       setAccount(prev => ({ 
         ...prev, 
         positions: prev.positions.map(p => ({ ...p, canSellToday: true })) 
       }));
     } else {
-      // 达到数据终点
-      liquidateCurrentStock();
-      alert('本轮训练行情已耗尽，系统已为您自动结算持仓并切换至新标的。');
+      liquidateCurrentStock(); 
+      alert('行情已到达数据终点，系统已自动结算持仓并为您切换下一标的。');
       loadNewStock();
     }
   }, [visibleCount, historicalData.length, loadNewStock, liquidateCurrentStock]);
 
   useEffect(() => { loadNewStock(); }, []);
 
-  // 模拟计时器
+  // 自动模拟器
   useEffect(() => {
     if (!isSimulating || intradayStep > 240 || isLoading) return;
     if (intradayStep === 240) {
-      const autoJumpTimeout = setTimeout(() => handleNextDay(), 3000);
-      return () => clearTimeout(autoJumpTimeout);
+      const timer = setTimeout(() => handleNextDay(), 2500);
+      return () => clearTimeout(timer);
     }
-    const timer = setInterval(() => setIntradayStep(prev => prev + 1), 80);
-    return () => clearInterval(timer);
+    const tick = setInterval(() => setIntradayStep(prev => prev + 1), 80);
+    return () => clearInterval(tick);
   }, [isSimulating, intradayStep, handleNextDay, isLoading]);
 
   useEffect(() => {
-    localStorage.setItem('trader_sim_account_v5', JSON.stringify(account));
+    localStorage.setItem('trader_sim_account_v6', JSON.stringify(account));
   }, [account]);
 
-  // 更新实时资产
+  // 更新账户动态总资产
   useEffect(() => {
     if (!stock || isLoading || !currentMinutePrice) return;
     setAccount(prev => {
@@ -166,7 +167,7 @@ const App: React.FC = () => {
     if (account.availableCash < cost + fee) { alert('资金不足'); return; }
 
     const newRecord: TradeRecord = {
-      id: Date.now().toString(), type: 'BUY', stockCode: stock.code, stockName: stock.name,
+      id: `buy-${Date.now()}`, type: 'BUY', stockCode: stock.code, stockName: stock.name,
       price, amount, fee, time: `${currentKLine.date} ${visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}`,
       totalAmount: cost + fee
     };
@@ -184,8 +185,8 @@ const App: React.FC = () => {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-[#0f172a] text-blue-400 font-mono space-y-4 px-10 text-center">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-sm tracking-widest animate-pulse font-bold">正在接入 A 股历史全复权数据流水线...</div>
-        <div className="text-[10px] text-slate-500 max-w-xs">如果加载缓慢，系统将自动切换至本地高性能仿真引擎</div>
+        <div className="text-sm tracking-widest animate-pulse font-bold uppercase">Connecting to Stock Market Timeline...</div>
+        <div className="text-[10px] text-slate-500 max-w-xs">如果加载失败，系统将自动切换至本地行情生成器</div>
       </div>
     );
   }
@@ -199,17 +200,17 @@ const App: React.FC = () => {
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
             </div>
             <div>
-              <h1 className="text-base font-black tracking-tight flex items-center gap-2">盘感 Pro <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded">实战模拟</span></h1>
-              <p className="text-[10px] text-slate-500 font-mono">交易单元: {stock.name} ({stock.code}) · 当前第 {visibleCount} / {historicalData.length} 日</p>
+              <h1 className="text-base font-black tracking-tight flex items-center gap-2">盘感 Pro <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded">实战模拟器</span></h1>
+              <p className="text-[10px] text-slate-500 font-mono">交易标的: {stock.name} ({stock.code}) · 当前进度 {visibleCount} / {historicalData.length} 日</p>
             </div>
           </div>
           <div className="flex gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between border-t border-slate-700/50 pt-3 md:pt-0 md:border-0">
             <div className="text-right">
-              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">仿真日期</p>
+              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">历史日期</p>
               <p className="font-mono text-base font-black text-blue-400">{currentKLine?.date}</p>
             </div>
             <div className="text-right">
-              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">账户净资产</p>
+              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">账户资产</p>
               <p className="font-mono text-base font-black text-emerald-400">¥{account.totalAssets.toLocaleString(undefined, {maximumFractionDigits:0})}</p>
             </div>
           </div>
@@ -220,7 +221,7 @@ const App: React.FC = () => {
             <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实历史 K 线
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实日K复盘
                 </h3>
                 <div className="flex gap-2 text-[9px] font-mono text-slate-600">
                   <span className="text-yellow-500">MA5:{currentKLine?.ma5?.toFixed(2) || '--'}</span>
@@ -234,11 +235,11 @@ const App: React.FC = () => {
             <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner relative">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 分时图表 (当日实时)
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 分时图
                 </h3>
                 <div className="flex items-center gap-3">
                    <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded">{visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}</span>
-                   <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs leading-none hover:bg-slate-600 transition-colors">
+                   <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs leading-none hover:bg-slate-600 transition-all active:scale-95">
                      {isSimulating ? '⏸' : '▶'}
                    </button>
                 </div>
