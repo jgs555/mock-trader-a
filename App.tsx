@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   KLine, StockInfo, UserAccount, TradeRecord 
 } from './types';
@@ -7,7 +7,7 @@ import {
   fetchRandomStock, fetchHistoricalDataFromAPI, generateMinuteData 
 } from './services/stockService';
 import { 
-  INITIAL_CASH, COMMISSION_RATE, STAMP_DUTY_RATE, MIN_COMMISSION 
+  INITIAL_CASH, COMMISSION_RATE, STAMP_DUTY_RATE, MIN_COMMISSION, SEED_STOCKS 
 } from './constants';
 import KLineChart from './components/KLineChart';
 import MinuteChart from './components/MinuteChart';
@@ -19,13 +19,12 @@ const App: React.FC = () => {
   const [historicalData, setHistoricalData] = useState<KLine[]>([]);
   const [visibleCount, setVisibleCount] = useState<number>(0); 
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  
   const [intradayStep, setIntradayStep] = useState<number>(0);
   const [isSimulating, setIsSimulating] = useState<boolean>(true);
 
   const [account, setAccount] = useState<UserAccount>(() => {
     try {
-      const saved = localStorage.getItem('trader_sim_account_v4');
+      const saved = localStorage.getItem('trader_sim_account_v5');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
@@ -33,6 +32,9 @@ const App: React.FC = () => {
       initialCash: INITIAL_CASH, positions: [], history: []
     };
   });
+
+  const accountRef = useRef(account);
+  useEffect(() => { accountRef.current = account; }, [account]);
 
   const currentKLine = useMemo(() => {
     if (historicalData.length === 0 || visibleCount <= 0) return null;
@@ -48,53 +50,98 @@ const App: React.FC = () => {
   const visibleIntradayData = useMemo(() => fullIntradayData.slice(0, intradayStep + 1), [fullIntradayData, intradayStep]);
   const currentMinutePrice = useMemo(() => visibleIntradayData.length > 0 ? visibleIntradayData[visibleIntradayData.length - 1].price : (currentKLine?.open || 0), [visibleIntradayData, currentKLine]);
 
-  const loadNewStock = useCallback(async () => {
+  // 核心成交逻辑
+  const handleSell = useCallback((amount: number, forcePrice?: number) => {
+    if (!stock || !currentKLine) return;
+    const pos = accountRef.current.positions.find(p => p.stockCode === stock.code);
+    if (!pos || pos.amount < amount) return;
+
+    const price = forcePrice || currentMinutePrice;
+    const proceeds = amount * price;
+    const fee = Math.max(proceeds * COMMISSION_RATE, MIN_COMMISSION) + proceeds * STAMP_DUTY_RATE;
+    const profit = (price - pos.costPrice) * amount - fee;
+
+    const newRecord: TradeRecord = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5), 
+      type: 'SELL', stockCode: stock.code, stockName: stock.name,
+      price, amount, fee, 
+      time: `${currentKLine.date} ${visibleIntradayData[visibleIntradayData.length-1]?.time || '15:00'}`,
+      totalAmount: proceeds - fee, profit, profitRate: (profit / (pos.costPrice * amount)) * 100
+    };
+
+    setAccount(prev => ({
+      ...prev, 
+      availableCash: prev.availableCash + proceeds - fee,
+      positions: prev.positions.map(p => p.stockCode === stock.code ? { ...p, amount: p.amount - amount } : p).filter(p => p.amount > 0),
+      history: [...prev.history, newRecord]
+    }));
+  }, [stock, currentKLine, currentMinutePrice, visibleIntradayData]);
+
+  // 强制清仓当前品种
+  const liquidateCurrentStock = useCallback(() => {
+    if (!stock) return;
+    const pos = accountRef.current.positions.find(p => p.stockCode === stock.code);
+    if (pos && pos.amount > 0) {
+      handleSell(pos.amount);
+    }
+  }, [stock, handleSell]);
+
+  const loadNewStock = useCallback(async (isSkip = false) => {
+    if (isSkip) liquidateCurrentStock(); // 手动跳过时强制结算
+    
     setIsLoading(true);
     try {
-      const newStock = fetchRandomStock();
-      const data = await fetchHistoricalDataFromAPI(newStock.code);
-      setStock(newStock);
-      setHistoricalData(data);
-      setVisibleCount(Math.min(100, data.length));
+      const randomStock = fetchRandomStock();
+      const result = await fetchHistoricalDataFromAPI(randomStock.code);
+      
+      setStock(randomStock);
+      setHistoricalData(result.data);
+      setVisibleCount(result.startIndex + 50); 
       setIntradayStep(0);
       setIsSimulating(true);
       setIsLoading(false);
     } catch (err) {
-      console.error("Failed to load stock data", err);
+      console.error('Loader failed:', err);
       setIsLoading(false);
     }
-  }, []);
+  }, [liquidateCurrentStock]);
 
   const handleNextDay = useCallback(() => {
     if (visibleCount < historicalData.length) {
       setVisibleCount(prev => prev + 1);
       setIntradayStep(0);
       setIsSimulating(true);
+      // 解锁当日卖出限制
       setAccount(prev => ({ 
         ...prev, 
         positions: prev.positions.map(p => ({ ...p, canSellToday: true })) 
       }));
     } else {
+      // 达到数据终点
+      liquidateCurrentStock();
+      alert('本轮训练行情已耗尽，系统已为您自动结算持仓并切换至新标的。');
       loadNewStock();
     }
-  }, [visibleCount, historicalData.length, loadNewStock]);
+  }, [visibleCount, historicalData.length, loadNewStock, liquidateCurrentStock]);
 
   useEffect(() => { loadNewStock(); }, []);
 
+  // 模拟计时器
   useEffect(() => {
     if (!isSimulating || intradayStep > 240 || isLoading) return;
     if (intradayStep === 240) {
-      const autoJumpTimeout = setTimeout(() => handleNextDay(), 2500);
+      const autoJumpTimeout = setTimeout(() => handleNextDay(), 3000);
       return () => clearTimeout(autoJumpTimeout);
     }
-    const timer = setInterval(() => setIntradayStep(prev => prev + 1), 100);
+    const timer = setInterval(() => setIntradayStep(prev => prev + 1), 80);
     return () => clearInterval(timer);
   }, [isSimulating, intradayStep, handleNextDay, isLoading]);
 
   useEffect(() => {
-    localStorage.setItem('trader_sim_account_v4', JSON.stringify(account));
+    localStorage.setItem('trader_sim_account_v5', JSON.stringify(account));
   }, [account]);
 
+  // 更新实时资产
   useEffect(() => {
     if (!stock || isLoading || !currentMinutePrice) return;
     setAccount(prev => {
@@ -107,8 +154,7 @@ const App: React.FC = () => {
         marketValue += pos.amount * pos.currentPrice;
         return pos;
       });
-      const newTotal = prev.availableCash + marketValue;
-      return { ...prev, totalAssets: newTotal, positions: updatedPositions };
+      return { ...prev, totalAssets: prev.availableCash + marketValue, positions: updatedPositions };
     });
   }, [currentMinutePrice, stock, isLoading]);
 
@@ -134,36 +180,12 @@ const App: React.FC = () => {
     });
   };
 
-  const handleSell = (amount: number) => {
-    if (!stock || !currentKLine) return;
-    const pos = account.positions.find(p => p.stockCode === stock.code);
-    if (!pos || pos.amount < amount) { alert('持仓不足'); return; }
-    if (!pos.canSellToday) { alert('T+1规则限制'); return; }
-
-    const price = currentMinutePrice;
-    const proceeds = amount * price;
-    const fee = Math.max(proceeds * COMMISSION_RATE, MIN_COMMISSION) + proceeds * STAMP_DUTY_RATE;
-    const profit = (price - pos.costPrice) * amount - fee;
-
-    const newRecord: TradeRecord = {
-      id: Date.now().toString(), type: 'SELL', stockCode: stock.code, stockName: stock.name,
-      price, amount, fee, time: `${currentKLine.date} ${visibleIntradayData[visibleIntradayData.length-1]?.time || '15:00'}`,
-      totalAmount: proceeds - fee, profit, profitRate: (profit / (pos.costPrice * amount)) * 100
-    };
-
-    setAccount(prev => ({
-      ...prev, availableCash: prev.availableCash + proceeds - fee,
-      positions: prev.positions.map(p => p.stockCode === stock.code ? { ...p, amount: p.amount - amount } : p).filter(p => p.amount > 0),
-      history: [...prev.history, newRecord]
-    }));
-  };
-
   if (isLoading || !stock || !currentKLine || visibleCount === 0) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-[#0f172a] text-blue-400 font-mono space-y-4 px-10 text-center">
-        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-sm tracking-widest animate-pulse">正在穿梭时空，匹配历史真实行情...</div>
-        <div className="text-[10px] text-slate-500 max-w-xs">系统正在获取前复权数据并随机截取训练区间</div>
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="text-sm tracking-widest animate-pulse font-bold">正在接入 A 股历史全复权数据流水线...</div>
+        <div className="text-[10px] text-slate-500 max-w-xs">如果加载缓慢，系统将自动切换至本地高性能仿真引擎</div>
       </div>
     );
   }
@@ -177,13 +199,13 @@ const App: React.FC = () => {
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
             </div>
             <div>
-              <h1 className="text-base font-black tracking-tight flex items-center gap-2">盘感 Pro <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded">随机时空</span></h1>
-              <p className="text-[10px] text-slate-500 font-mono">数据来源：腾讯财经 (QFQ)</p>
+              <h1 className="text-base font-black tracking-tight flex items-center gap-2">盘感 Pro <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded">实战模拟</span></h1>
+              <p className="text-[10px] text-slate-500 font-mono">交易单元: {stock.name} ({stock.code}) · 当前第 {visibleCount} / {historicalData.length} 日</p>
             </div>
           </div>
           <div className="flex gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between border-t border-slate-700/50 pt-3 md:pt-0 md:border-0">
             <div className="text-right">
-              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">当前仿真时间</p>
+              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">仿真日期</p>
               <p className="font-mono text-base font-black text-blue-400">{currentKLine?.date}</p>
             </div>
             <div className="text-right">
@@ -198,13 +220,12 @@ const App: React.FC = () => {
             <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实日K历史
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实历史 K 线
                 </h3>
-                <div className="flex gap-2 text-[9px] font-mono text-slate-600 overflow-x-auto whitespace-nowrap">
-                  <span className="text-yellow-500/80">MA5:{currentKLine?.ma5?.toFixed(2) || '--'}</span>
-                  <span className="text-blue-500/80">MA10:{currentKLine?.ma10?.toFixed(2) || '--'}</span>
-                  <span className="text-purple-500/80">MA20:{currentKLine?.ma20?.toFixed(2) || '--'}</span>
-                  <span className="text-slate-400/80">MA60:{currentKLine?.ma60?.toFixed(2) || '--'}</span>
+                <div className="flex gap-2 text-[9px] font-mono text-slate-600">
+                  <span className="text-yellow-500">MA5:{currentKLine?.ma5?.toFixed(2) || '--'}</span>
+                  <span className="text-blue-500">MA10:{currentKLine?.ma10?.toFixed(2) || '--'}</span>
+                  <span className="text-purple-500">MA20:{currentKLine?.ma20?.toFixed(2) || '--'}</span>
                 </div>
               </div>
               <KLineChart data={historicalData} visibleCount={visibleCount} />
@@ -213,11 +234,11 @@ const App: React.FC = () => {
             <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner relative">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 当日实时分时
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 分时图表 (当日实时)
                 </h3>
                 <div className="flex items-center gap-3">
-                   <span className="text-[10px] font-mono text-slate-600 bg-slate-900 px-2 py-0.5 rounded">{visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}</span>
-                   <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs leading-none">
+                   <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded">{visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}</span>
+                   <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs leading-none hover:bg-slate-600 transition-colors">
                      {isSimulating ? '⏸' : '▶'}
                    </button>
                 </div>
@@ -233,7 +254,7 @@ const App: React.FC = () => {
               account={account}
               onBuy={handleBuy}
               onSell={handleSell}
-              onSkip={loadNewStock}
+              onSkip={() => loadNewStock(true)}
               onNext={handleNextDay}
             />
             <StatsBoard account={account} />

@@ -31,61 +31,61 @@ const StatsBoard: React.FC<StatsBoardProps> = ({ account }) => {
       <div className="p-4 border-b border-slate-700 bg-slate-800/80 flex justify-between items-center">
         <h3 className="font-bold flex items-center gap-2">
           <span className="w-1 h-4 bg-blue-500 rounded"></span>
-          交易表现统计
+          账户分析
         </h3>
-        <span className="text-xs text-slate-500 font-mono">LIVE PERFORMANCE</span>
+        <span className="text-[10px] text-slate-500 font-mono tracking-wider">RECAP</span>
       </div>
       
       <div className="p-4 flex flex-wrap gap-y-6">
-        <div className="w-1/2 md:w-1/4 px-2 border-r border-slate-700/50">
-          <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">总资产</div>
-          <div className="text-lg sm:text-xl font-bold font-mono truncate">
+        <div className="w-1/2 px-2 border-r border-slate-700/50">
+          <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1">总资产</div>
+          <div className="text-base font-bold font-mono truncate">
             ¥{totalAssets.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </div>
         </div>
-        <div className="w-1/2 md:w-1/4 px-2 border-r border-slate-700/50">
-          <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">累计盈亏</div>
-          <div className={`text-lg sm:text-xl font-bold font-mono truncate ${totalProfit >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
+        <div className="w-1/2 px-2">
+          <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1">累计盈亏</div>
+          <div className={`text-base font-bold font-mono truncate ${totalProfit >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
             {totalProfit >= 0 ? '+' : ''}{totalProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            <div className="text-xs font-normal">({totalProfitRate.toFixed(2)}%)</div>
-          </div>
-        </div>
-        <div className="w-1/2 md:w-1/4 px-2 border-r border-slate-700/50">
-          <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">模拟胜率</div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-blue-400">
-            {stats.winRate.toFixed(1)}%
-          </div>
-        </div>
-        <div className="w-1/2 md:w-1/4 px-2">
-          <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">交易笔数</div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-slate-300">
-            {stats.totalTrades}
+            <span className="text-[10px] ml-1">({totalProfitRate.toFixed(1)}%)</span>
           </div>
         </div>
       </div>
 
+      <div className="px-4 pb-4 grid grid-cols-2 gap-2">
+         <div className="bg-slate-900/40 p-2 rounded-lg border border-slate-700/30">
+            <div className="text-[9px] text-slate-600">模拟胜率</div>
+            <div className="text-sm font-bold text-blue-400">{stats.winRate.toFixed(1)}%</div>
+         </div>
+         <div className="bg-slate-900/40 p-2 rounded-lg border border-slate-700/30">
+            <div className="text-[9px] text-slate-600">总成交</div>
+            <div className="text-sm font-bold">{stats.totalTrades} 次</div>
+         </div>
+      </div>
+
       <div className="p-4 bg-slate-900/40 border-t border-slate-700/50">
-        <h4 className="text-[10px] font-semibold text-slate-500 mb-3 uppercase tracking-widest flex items-center gap-2">
+        <h4 className="text-[10px] font-semibold text-slate-500 mb-3 uppercase tracking-widest">
           最近动态
         </h4>
-        <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-          {history.length === 0 && <div className="text-center py-6 text-slate-600 text-xs italic">等待第一笔成交...</div>}
+        <div className="max-h-64 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+          {history.length === 0 && <div className="text-center py-6 text-slate-600 text-xs italic opacity-50">等待第一笔成交指令...</div>}
           {[...history].reverse().map((record) => (
-            <div key={record.id} className="flex justify-between items-center p-3 bg-slate-800/50 rounded-lg text-xs hover:bg-slate-700/50 transition-colors border-l-2" style={{ borderLeftColor: record.type === 'BUY' ? '#ef4444' : '#22c55e' }}>
+            <div key={record.id} className="flex justify-between items-center p-3 bg-slate-800/60 rounded-lg text-xs hover:bg-slate-700/60 transition-colors border-l-2" style={{ borderLeftColor: record.type === 'BUY' ? '#ef4444' : '#22c55e' }}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className={`px-1 rounded-[2px] text-[10px] ${record.type === 'BUY' ? 'bg-stock-up/20 text-stock-up' : 'bg-stock-down/20 text-stock-down'}`}>
-                    {record.type === 'BUY' ? '买' : '卖'}
+                  <span className={`px-1 rounded-[2px] text-[9px] font-bold ${record.type === 'BUY' ? 'bg-stock-up/20 text-stock-up' : 'bg-stock-down/20 text-stock-down'}`}>
+                    {record.type === 'BUY' ? '买入' : '卖出'}
                   </span>
-                  <span className="font-bold truncate">{record.stockName}</span>
+                  <span className="font-bold truncate text-slate-200">{record.stockName}</span>
                 </div>
-                <div className="text-slate-500 mt-1">{record.time} · {record.amount}股</div>
+                <div className="text-[10px] text-slate-500 mt-1">{record.time}</div>
               </div>
               <div className="text-right ml-4">
-                <div className="font-mono font-bold">@{record.price.toFixed(2)}</div>
+                <div className="font-mono font-bold text-slate-300">@{record.price.toFixed(2)}</div>
                 {record.profit !== undefined && (
-                  <div className={`font-mono text-[10px] mt-0.5 ${record.profit >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
-                    {record.profit >= 0 ? '+' : ''}{record.profit.toFixed(1)}
+                  <div className={`font-mono text-[10px] mt-0.5 font-black ${record.profit >= 0 ? 'text-stock-up' : 'text-stock-down'}`}>
+                    {record.profit >= 0 ? '+' : ''}{record.profit.toFixed(0)}
+                    <span className="ml-1 opacity-70">({record.profitRate?.toFixed(2)}%)</span>
                   </div>
                 )}
               </div>

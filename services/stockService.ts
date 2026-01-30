@@ -2,9 +2,6 @@
 import { KLine, MinuteData, StockInfo } from '../types';
 import { SEED_STOCKS } from '../constants';
 
-/**
- * 跨域代理服务 - 使用 raw 模式绕过 allorigins 的 JSON 包装，解决解析错误
- */
 const PROXY_URL = 'https://api.allorigins.win/raw?url=';
 
 export const fetchRandomStock = (): StockInfo => {
@@ -12,60 +9,60 @@ export const fetchRandomStock = (): StockInfo => {
 };
 
 /**
- * 获取真实前复权历史日 K 线数据
+ * 获取完整历史数据
  */
-export const fetchHistoricalDataFromAPI = async (code: string): Promise<KLine[]> => {
+export const fetchHistoricalDataFromAPI = async (code: string): Promise<{ data: KLine[], startIndex: number }> => {
   try {
     const symbol = code.toLowerCase();
-    const count = 1200;
-    const apiUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,${count},qfq`;
+    const count = 1200; // 获取上限数据量
+    // 增加 timestamp 防止缓存
+    const apiUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,${count},qfq&_=${Date.now()}`;
     
     const response = await fetch(`${PROXY_URL}${encodeURIComponent(apiUrl)}`);
-    if (!response.ok) throw new Error(`Network status: ${response.status}`);
+    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
     
     const rawText = await response.text();
-    if (rawText.includes("Oops") || rawText.startsWith("<!DOCTYPE")) {
-       throw new Error("Proxy server error (HTML returned)");
-    }
+    // 检查是否返回了 HTML (代理错误)
+    if (rawText.trim().startsWith('<')) throw new Error('Proxy returned HTML');
 
     const parsedData = JSON.parse(rawText);
     const stockData = parsedData.data?.[symbol];
-    if (!stockData) throw new Error('Stock node missing');
+    if (!stockData) throw new Error('API Data Node Missing');
     
     const rawKData = stockData.qfqday || stockData.day;
-    if (!Array.isArray(rawKData) || rawKData.length < 300) throw new Error('Insufficient data');
+    if (!Array.isArray(rawKData) || rawKData.length < 50) throw new Error('Data too short');
 
-    const allData: KLine[] = rawKData.map((item: any) => ({
-      date: item[0],
-      open: parseFloat(item[1]),
-      close: parseFloat(item[2]),
-      high: parseFloat(item[3]),
-      low: parseFloat(item[4]),
-      volume: parseFloat(item[5])
-    }));
-
-    const windowSize = 400;
-    const maxStart = allData.length - windowSize;
-    const randomStart = Math.floor(Math.random() * Math.max(1, maxStart));
-    const sliceData = allData.slice(randomStart, randomStart + windowSize);
-
-    return sliceData.map((d, i) => {
+    const allData: KLine[] = rawKData.map((item: any, i: number, arr: any[]) => {
+      const close = parseFloat(item[2]);
       const calculateMA = (period: number) => {
         if (i < period - 1) return undefined;
-        const sum = sliceData.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
+        let sum = 0;
+        for(let j = 0; j < period; j++) sum += parseFloat(arr[i-j][2]);
         return parseFloat((sum / period).toFixed(2));
       };
       return {
-        ...d,
+        date: item[0],
+        open: parseFloat(item[1]),
+        close: close,
+        high: parseFloat(item[3]),
+        low: parseFloat(item[4]),
+        volume: parseFloat(item[5]),
         ma5: calculateMA(5),
         ma10: calculateMA(10),
         ma20: calculateMA(20),
         ma60: calculateMA(60)
       };
     });
+
+    // 随机选择起点，预留至少 100 天的训练空间
+    const maxStart = Math.max(0, allData.length - 120);
+    const startIndex = Math.floor(Math.random() * Math.min(maxStart, 800));
+
+    return { data: allData, startIndex };
   } catch (error) {
-    console.error('Fetch error, using historical fallback:', error);
-    return generateFallbackData(400);
+    console.warn('API Fetch failed, using simulation engine instead.', error);
+    const fallback = generateFallbackData(800);
+    return { data: fallback, startIndex: 150 };
   }
 };
 
@@ -80,20 +77,17 @@ export const generateMinuteData = (kline: KLine): MinuteData[] => {
     const trend = (kline.close - kline.open) * progress;
     const amplitude = (kline.high - kline.low) / kline.open;
     const volatilityRange = kline.open * Math.max(0.004, amplitude * 0.18);
-    
     const noise = (Math.random() + Math.random() + Math.random() - 1.5) * volatilityRange;
     
     let price = kline.open + trend + noise;
-    
     if (i === 0) price = kline.open;
     if (i === totalPoints - 1) price = kline.close;
     price = Math.max(kline.low, Math.min(kline.high, price));
 
-    // 优化：计算每分钟成交量，确保不为0
     const volBase = kline.volume / totalPoints;
     const factor = (i < 20 || i > 220) ? (1.5 + Math.random()) : (0.5 + Math.random());
     let vol = Math.floor(volBase * factor);
-    if (kline.volume > 0 && vol === 0) vol = 1; // 兜底：只要当日有成交量，每分钟至少显示1
+    if (kline.volume > 0 && vol === 0) vol = 1;
     
     totalVolume += vol;
     volumeSumPrice += price * vol;
@@ -122,31 +116,32 @@ export const generateMinuteData = (kline: KLine): MinuteData[] => {
 
 const generateFallbackData = (count: number): KLine[] => {
   const data: KLine[] = [];
-  const startYear = 2015 + Math.floor(Math.random() * 8);
-  const startDate = new Date(startYear, Math.floor(Math.random() * 12), 1);
-  let currentPrice = 50 + Math.random() * 100;
-  
+  let currentPrice = 30 + Math.random() * 50;
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - count * 1.5);
+
   for (let i = 0; i < count; i++) {
-    const change = currentPrice * (Math.random() - 0.485) * 0.03;
+    const change = currentPrice * (Math.random() - 0.485) * 0.04;
     const open = currentPrice;
     const close = open + change;
     const date = new Date(startDate.getTime() + i * 24 * 3600 * 1000);
+    
     if (date.getDay() !== 0 && date.getDay() !== 6) {
       data.push({
         date: date.toISOString().split('T')[0],
         open, close,
-        high: Math.max(open, close) * (1 + Math.random() * 0.01),
-        low: Math.min(open, close) * (1 - Math.random() * 0.01),
-        volume: 1000000 + Math.random() * 5000000
+        high: Math.max(open, close) * (1 + Math.random() * 0.015),
+        low: Math.min(open, close) * (1 - Math.random() * 0.015),
+        volume: 2000000 + Math.random() * 8000000
       });
       currentPrice = close;
     }
   }
-  
-  return data.map((d, i) => {
+
+  return data.map((d, i, arr) => {
     const calculateMA = (period: number) => {
       if (i < period - 1) return undefined;
-      const sum = data.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
+      const sum = arr.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
       return parseFloat((sum / period).toFixed(2));
     };
     return { ...d, ma5: calculateMA(5), ma10: calculateMA(10), ma20: calculateMA(20), ma60: calculateMA(60) };
