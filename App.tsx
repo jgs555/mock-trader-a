@@ -50,7 +50,6 @@ const App: React.FC = () => {
   const visibleIntradayData = useMemo(() => fullIntradayData.slice(0, intradayStep + 1), [fullIntradayData, intradayStep]);
   const currentMinutePrice = useMemo(() => visibleIntradayData.length > 0 ? visibleIntradayData[visibleIntradayData.length - 1].price : (currentKLine?.open || 0), [visibleIntradayData, currentKLine]);
 
-  // 统一卖出逻辑
   const handleSell = useCallback((amount: number, forcePrice?: number) => {
     if (!stock || !currentKLine) return;
     const currentAcc = accountRef.current;
@@ -79,11 +78,9 @@ const App: React.FC = () => {
     }));
   }, [stock, currentKLine, currentMinutePrice, visibleIntradayData]);
 
-  // 强制结算当前持仓
   const liquidateCurrentStock = useCallback(() => {
-    const currentAcc = accountRef.current;
     if (!stock) return;
-    const pos = currentAcc.positions.find(p => p.stockCode === stock.code);
+    const pos = accountRef.current.positions.find(p => p.stockCode === stock.code);
     if (pos && pos.amount > 0) {
       handleSell(pos.amount);
     }
@@ -94,7 +91,7 @@ const App: React.FC = () => {
     
     setIsLoading(true);
     try {
-      const randomStock = fetchRandomStock();
+      const randomStock = await fetchRandomStock();
       const result = await fetchHistoricalDataFromAPI(randomStock.code);
       
       setStock(randomStock);
@@ -127,7 +124,6 @@ const App: React.FC = () => {
 
   useEffect(() => { loadNewStock(); }, []);
 
-  // 自动模拟器
   useEffect(() => {
     if (!isSimulating || intradayStep > 240 || isLoading) return;
     if (intradayStep === 240) {
@@ -142,7 +138,6 @@ const App: React.FC = () => {
     localStorage.setItem('trader_sim_account_v6', JSON.stringify(account));
   }, [account]);
 
-  // 更新账户动态总资产
   useEffect(() => {
     if (!stock || isLoading || !currentMinutePrice) return;
     setAccount(prev => {
@@ -185,70 +180,72 @@ const App: React.FC = () => {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-[#0f172a] text-blue-400 font-mono space-y-4 px-10 text-center">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-sm tracking-widest animate-pulse font-bold uppercase">Connecting to Stock Market Timeline...</div>
-        <div className="text-[10px] text-slate-500 max-w-xs">如果加载失败，系统将自动切换至本地行情生成器</div>
+        <div className="text-sm tracking-widest animate-pulse font-bold uppercase">Connecting to Full Market Timeline...</div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#0b1120] text-slate-200 pb-40 lg:pb-10 transition-colors">
-      <div className="max-w-[1400px] mx-auto p-3 md:p-6 space-y-4">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-md shadow-lg">
+      <div className="max-w-[1600px] mx-auto p-3 md:p-6 space-y-4">
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-red-500 rounded-xl shadow-lg shadow-red-500/20">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
             </div>
             <div>
               <h1 className="text-base font-black tracking-tight flex items-center gap-2">盘感 Pro <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded">实战模拟器</span></h1>
-              <p className="text-[10px] text-slate-500 font-mono">交易标的: {stock.name} ({stock.code}) · 当前进度 {visibleCount} / {historicalData.length} 日</p>
+              <p className="text-[10px] text-slate-500 font-mono">{stock.name} ({stock.code}) · {visibleCount}/{historicalData.length}日</p>
             </div>
           </div>
-          <div className="flex gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between border-t border-slate-700/50 pt-3 md:pt-0 md:border-0">
+          <div className="flex gap-6 mt-4 md:mt-0 items-center">
             <div className="text-right">
-              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">历史日期</p>
+              <p className="text-[9px] text-slate-500 uppercase font-bold">仿真日期</p>
               <p className="font-mono text-base font-black text-blue-400">{currentKLine?.date}</p>
             </div>
             <div className="text-right">
-              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-tighter">账户资产</p>
+              <p className="text-[9px] text-slate-500 uppercase font-bold">账户资产</p>
               <p className="font-mono text-base font-black text-emerald-400">¥{account.totalAssets.toLocaleString(undefined, {maximumFractionDigits:0})}</p>
             </div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <div className="lg:col-span-8 space-y-4">
-            <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实日K复盘
-                </h3>
-                <div className="flex gap-2 text-[9px] font-mono text-slate-600">
-                  <span className="text-yellow-500">MA5:{currentKLine?.ma5?.toFixed(2) || '--'}</span>
-                  <span className="text-blue-500">MA10:{currentKLine?.ma10?.toFixed(2) || '--'}</span>
-                  <span className="text-purple-500">MA20:{currentKLine?.ma20?.toFixed(2) || '--'}</span>
-                </div>
-              </div>
-              <KLineChart data={historicalData} visibleCount={visibleCount} />
-            </div>
-
-            <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner relative">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 分时图
-                </h3>
-                <div className="flex items-center gap-3">
-                   <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded">{visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}</span>
-                   <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs leading-none hover:bg-slate-600 transition-all active:scale-95">
-                     {isSimulating ? '⏸' : '▶'}
-                   </button>
-                </div>
-              </div>
-              <MinuteChart data={visibleIntradayData} basePrice={prevKLine ? prevKLine.close : (currentKLine?.open || 0)} />
+        {/* Row 1: K-Line Full Width */}
+        <div className="bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> 真实日K复盘 (趋势视野)
+            </h3>
+            <div className="flex gap-3 text-[9px] font-mono text-slate-500">
+              <span className="text-yellow-500">MA5:{currentKLine?.ma5?.toFixed(2)}</span>
+              <span className="text-blue-500">MA10:{currentKLine?.ma10?.toFixed(2)}</span>
+              <span className="text-purple-500">MA20:{currentKLine?.ma20?.toFixed(2)}</span>
             </div>
           </div>
+          <KLineChart data={historicalData} visibleCount={visibleCount} />
+        </div>
 
-          <div className="lg:col-span-4 space-y-4">
+        {/* Row 2: Minute Chart + Panels (Horizontal Layout) */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Bottom Left: Minute Chart (Compressed Width, Increased Height) */}
+          <div className="lg:flex-[7] bg-slate-800/30 rounded-2xl border border-slate-700/30 p-4 shadow-inner relative">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xs font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> 实时分时图 (核心博弈)
+              </h3>
+              <div className="flex items-center gap-3">
+                 <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded">{visibleIntradayData[visibleIntradayData.length-1]?.time || '09:30'}</span>
+                 <button onClick={() => setIsSimulating(!isSimulating)} className="p-1.5 bg-slate-700 rounded-lg text-xs hover:bg-slate-600 transition-all active:scale-95">
+                   {isSimulating ? '⏸' : '▶'}
+                 </button>
+              </div>
+            </div>
+            <MinuteChart data={visibleIntradayData} basePrice={prevKLine ? prevKLine.close : (currentKLine?.open || 0)} />
+          </div>
+
+          {/* Bottom Right: Trade & Stats (Vertical Stack) */}
+          <div className="lg:flex-[5] flex flex-col gap-4">
             <TradePanel 
               stock={stock} 
               currentKLine={currentKLine ? {...currentKLine, close: currentMinutePrice} : { ...historicalData[0], close: 0 }} 

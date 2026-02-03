@@ -4,17 +4,57 @@ import { SEED_STOCKS } from '../constants';
 
 const PROXY_URL = 'https://api.allorigins.win/raw?url=';
 
-export const fetchRandomStock = (): StockInfo => {
-  return SEED_STOCKS[Math.floor(Math.random() * SEED_STOCKS.length)];
+// 内存缓存全量股票列表
+let cachedStocks: StockInfo[] = [];
+
+/**
+ * 从接口获取全量 A 股名单 (包含主板、创业板、科创板)
+ */
+export const fetchAllStocks = async (): Promise<StockInfo[]> => {
+  if (cachedStocks.length > 0) return cachedStocks;
+
+  try {
+    // 东方财富全量 A 股列表接口
+    // fields: f12(代码), f14(名称)
+    const apiUrl = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14&_=${Date.now()}`;
+    
+    const response = await fetch(`${PROXY_URL}${encodeURIComponent(apiUrl)}`);
+    if (!response.ok) throw new Error('Failed to fetch stock list');
+    
+    const json = await response.json();
+    const list = json?.data?.diff;
+
+    if (!Array.isArray(list)) throw new Error('Invalid stock list format');
+
+    cachedStocks = list.map((item: any) => {
+      const code = item.f12;
+      const name = item.f14;
+      // 简单映射沪深前缀：60/68开头为沪市(sh)，00/30开头为深市(sz)
+      const prefix = (code.startsWith('60') || code.startsWith('68')) ? 'sh' : 'sz';
+      return { code: `${prefix}${code}`, name };
+    });
+
+    return cachedStocks;
+  } catch (error) {
+    console.warn('Fetch stock list failed, using SEED_STOCKS as fallback', error);
+    return SEED_STOCKS;
+  }
 };
 
 /**
- * 获取完整历史数据，带有鲁棒的错误处理和缓存穿透
+ * 随机获取一只股票
+ */
+export const fetchRandomStock = async (): Promise<StockInfo> => {
+  const stocks = await fetchAllStocks();
+  return stocks[Math.floor(Math.random() * stocks.length)];
+};
+
+/**
+ * 获取完整历史数据
  */
 export const fetchHistoricalDataFromAPI = async (code: string): Promise<{ data: KLine[], startIndex: number }> => {
   try {
     const symbol = code.toLowerCase();
-    // 增加随机数后缀 _ 防止 API 缓存
     const apiUrl = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,1200,qfq&_=${Date.now()}`;
     
     const response = await fetch(`${PROXY_URL}${encodeURIComponent(apiUrl)}`);
@@ -52,14 +92,12 @@ export const fetchHistoricalDataFromAPI = async (code: string): Promise<{ data: 
       };
     });
 
-    // 随机选择起点，留出足够长的交易序列（至少150天）
     const maxStart = Math.max(0, allData.length - 150);
     const startIndex = Math.floor(Math.random() * Math.min(maxStart, 800));
 
     return { data: allData, startIndex };
   } catch (error) {
     console.warn('Stock API Fetch Error, Switching to Fallback Engine:', error);
-    // 生成一个带有随机波动的回退数据集
     const fallbackCount = 800;
     const fallback = generateFallbackData(fallbackCount);
     return { data: fallback, startIndex: 150 };
@@ -121,7 +159,7 @@ const generateFallbackData = (count: number): KLine[] => {
   startDate.setDate(startDate.getDate() - count * 1.5);
 
   for (let i = 0; i < count; i++) {
-    const dailyReturn = (Math.random() - 0.49) * 0.05; // 模拟略微向上的波动
+    const dailyReturn = (Math.random() - 0.49) * 0.05;
     const open = currentPrice;
     const close = open * (1 + dailyReturn);
     const high = Math.max(open, close) * (1 + Math.random() * 0.02);
