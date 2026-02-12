@@ -1,0 +1,88 @@
+/* pages/training/training.wxss */
+.training-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 20rpx;
+  box-sizing: border-box;
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  margin-bottom: 20rpx;
+  border-bottom: 1px solid #333;
+}
+
+.asset-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  font-size: 24rpx;
+  color: #888;
+}
+
+.value {
+  font-size: 40rpx;
+  font-weight: bold;
+}
+
+.kline-canvas {
+  width: 100%;
+  height: 600rpx;
+  background-color: #252525;
+  margin-bottom: 20rpx;
+  border-radius: 8rpx;
+}
+
+.info-panel {
+  background-color: #333;
+  padding: 20rpx;
+  border-radius: 10rpx;
+  margin-bottom: 30rpx;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 28rpx;
+  margin-bottom: 10rpx;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.control-panel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.btn {
+  width: 45% !important;
+  margin: 0 !important;
+  font-size: 30rpx;
+  color: white;
+  border-radius: 8rpx;
+}
+
+.buy-btn { background-color: #d81e06; } /* 红 */
+.sell-btn { background-color: #07c160; } /* 绿 */
+.close-btn { background-color: #f0ad4e; width: 100% !important; }
+.next-btn { background-color: #1989fa; width: 100% !important; margin-top: 10rpx !important;}
+
+.red { color: #d81e06; }
+.green { color: #07c160; }
+
+/* 禁用按钮样式 */
+button[disabled] {
+  background-color: #555 !important;
+  color: #888 !important;
+}

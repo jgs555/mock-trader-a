@@ -1,0 +1,6 @@
+<view class="container">
+  <view class="empty-tip">
+    <text>暂无排名数据</text>
+    <text class="sub-tip">快去参加对战吧！</text>
+  </view>
+</view>

@@ -1,0 +1,8 @@
+<view class="container">
+  <view class="room-info">
+    <text class="status">{{status}}</text>
+    <view class="room-id-box">
+      <text>房间号: {{roomId}}</text>
+    </view>
+  </view>
+</view>

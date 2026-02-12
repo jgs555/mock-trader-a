@@ -1,0 +1,24 @@
+<view class="container">
+  <view class="user-card">
+    <view class="avatar"></view>
+    <view class="info">
+      <text class="nickname">未登录用户</text>
+      <text class="uid">ID: --</text>
+    </view>
+  </view>
+
+  <view class="stats-card">
+    <view class="stat-item">
+      <text class="num">0</text>
+      <text class="label">胜场</text>
+    </view>
+    <view class="stat-item">
+      <text class="num">0%</text>
+      <text class="label">胜率</text>
+    </view>
+    <view class="stat-item">
+      <text class="num">0</text>
+      <text class="label">资产</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,36 @@
+<view class="container training-container">
+  <view class="header">
+    <view class="asset-box">
+      <text class="label">总资产</text>
+      <text class="value">{{assets}}</text>
+    </view>
+    <view class="asset-box">
+      <text class="label">收益率</text>
+      <text class="value {{returnRate >= 0 ? 'red' : 'green'}}">{{returnRate}}%</text>
+    </view>
+  </view>
+
+  <canvas type="2d" id="klineCanvas" class="kline-canvas"
+    bindtouchstart="onTouchStart"
+    bindtouchmove="onTouchMove"
+    bindtouchend="onTouchEnd"
+  ></canvas>
+
+  <view class="info-panel">
+    <view class="info-row">
+      <text>当前价: {{currentPrice}}</text>
+      <text>持仓: <text class="{{position !== 0 ? (position > 0 ? 'red' : 'green') : ''}}">{{positionText}}</text></text>
+    </view>
+    <view class="info-row">
+      <text>成本价: {{entryPrice || '--'}}</text>
+      <text>浮动盈亏: <text class="{{floatingPL > 0 ? 'red' : (floatingPL < 0 ? 'green' : '')}}">{{floatingPL}}</text></text>
+    </view>
+  </view>
+
+  <view class="control-panel">
+    <button class="btn buy-btn" bindtap="onBuyLong" disabled="{{position !== 0}}">买入 (做多)</button>
+    <button class="btn sell-btn" bindtap="onSellShort" disabled="{{position !== 0}}">卖出 (做空)</button>
+    <button class="btn close-btn" bindtap="onClosePosition" disabled="{{position === 0}}">平仓结算</button>
+    <button class="btn next-btn" bindtap="onNextDay">下一天</button>
+  </view>
+</view>

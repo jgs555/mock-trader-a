@@ -1,0 +1,11 @@
+<view class="container home-container">
+  <view class="title-area">
+    <text class="main-title">盘感训练</text>
+    <text class="sub-title">Mock Trader</text>
+  </view>
+
+  <view class="btn-area">
+    <button class="action-btn match-btn" bindtap="onStartMatching">开始匹配</button>
+    <button class="action-btn train-btn" bindtap="onSingleTraining">单人训练</button>
+  </view>
+</view>
